@@ -1,0 +1,37 @@
+[
+  {
+    "code": 0,
+    "data": {
+      "list": [
+        {
+          "title": "Morning video",
+          "author_name": "Alice",
+          "view_at": 1781652000,
+          "progress": 120,
+          "history": {"bvid": "BV1", "oid": 101, "business": "archive"}
+        },
+        {
+          "title": "Noon video",
+          "author_name": "Bob",
+          "view_at": 1781659200,
+          "progress": 60,
+          "history": {"bvid": "BV2", "oid": 102, "business": "archive"}
+        }
+      ]
+    }
+  },
+  {
+    "code": 0,
+    "data": {
+      "list": [
+        {
+          "title": "Previous day",
+          "author_name": "Carol",
+          "view_at": 1781618400,
+          "progress": 20,
+          "history": {"bvid": "BVold", "oid": 99, "business": "archive"}
+        }
+      ]
+    }
+  }
+]

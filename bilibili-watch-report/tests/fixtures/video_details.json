@@ -1,0 +1,24 @@
+{
+  "BV1": {
+    "code": 0,
+    "data": {
+      "bvid": "BV1",
+      "aid": 1,
+      "title": "Morning video detail",
+      "duration": 180,
+      "tname": "Music",
+      "owner": {"name": "Alice"}
+    }
+  },
+  "BV2": {
+    "code": 0,
+    "data": {
+      "bvid": "BV2",
+      "aid": 2,
+      "title": "Noon video detail",
+      "duration": 600,
+      "tname": "Tech",
+      "owner": {"name": "Bob"}
+    }
+  }
+}

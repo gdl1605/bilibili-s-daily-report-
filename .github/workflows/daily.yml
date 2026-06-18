@@ -1,0 +1,118 @@
+name: Daily Bilibili Watch Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional target date in YYYY-MM-DD. Defaults to yesterday in Asia/Shanghai."
+        required: false
+        type: string
+      send_email:
+        description: "Send the email during this manual run."
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      publish_pages:
+        description: "Set true only after confirming private Pages access."
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "30 17 * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-bilibili-watch-report
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: bilibili-watch-report
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    env:
+      BILI_SESSDATA: ${{ secrets.BILI_SESSDATA }}
+      BILI_BILI_JCT: ${{ secrets.BILI_BILI_JCT }}
+      BILI_RATE_LIMIT_SECONDS: ${{ secrets.BILI_RATE_LIMIT_SECONDS || vars.BILI_RATE_LIMIT_SECONDS || '0.3' }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      PUBLISH_PAGES: ${{ github.event.inputs.publish_pages || vars.PUBLISH_PAGES || 'false' }}
+      SEND_EMAIL: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.send_email || 'false' }}
+      TARGET_DATE: ${{ github.event.inputs.target_date }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Run daily report
+        run: |
+          EMAIL_FLAG=""
+          if [ "$SEND_EMAIL" != "true" ]; then
+            EMAIL_FLAG="--skip-email"
+          fi
+
+          if [ -n "$TARGET_DATE" ]; then
+            python -m bili_report.cli run-daily --date "$TARGET_DATE" $EMAIL_FLAG
+          else
+            python -m bili_report.cli run-daily $EMAIL_FLAG
+          fi
+
+      - name: Commit generated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data site
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+          else
+            git commit -m "chore: update daily bilibili report"
+            git push
+          fi
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibili-watch-dashboard
+          path: bilibili-watch-report/site
+
+      - name: Configure Pages
+        if: env.PUBLISH_PAGES == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: env.PUBLISH_PAGES == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: bilibili-watch-report/site
+
+      - name: Deploy Pages
+        if: env.PUBLISH_PAGES == 'true'
+        uses: actions/deploy-pages@v4

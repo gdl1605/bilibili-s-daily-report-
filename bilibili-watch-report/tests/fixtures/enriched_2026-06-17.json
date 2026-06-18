@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Morning video detail",
+    "bvid": "BV1",
+    "aid": 1,
+    "author_name": "Alice",
+    "business": "archive",
+    "view_at": 1781652000,
+    "progress": 120,
+    "duration": 180,
+    "tname": "Music",
+    "raw": {
+      "history": {"bvid": "BV1", "oid": 101, "business": "archive"}
+    }
+  },
+  {
+    "title": "Noon video detail",
+    "bvid": "BV2",
+    "aid": 2,
+    "author_name": "Bob",
+    "business": "archive",
+    "view_at": 1781659200,
+    "progress": 60,
+    "duration": 600,
+    "tname": "Tech",
+    "raw": {
+      "history": {"bvid": "BV2", "oid": 102, "business": "archive"}
+    }
+  }
+]
