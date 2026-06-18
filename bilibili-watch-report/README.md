@@ -66,7 +66,7 @@ Outputs:
 
 ## GitHub Actions
 
-When this app lives under the repository root `bilibili-watch-report/`, the active workflow should be at the repository-level path `.github/workflows/daily.yml`. It runs at 17:30 UTC, which is 01:30 in Asia/Shanghai. It also supports manual `workflow_dispatch`.
+When this app lives under the repository root `bilibili-watch-report/`, the active workflow should be at the repository-level path `.github/workflows/daily.yml`. It runs at 00:00 UTC, which is 08:00 in Asia/Shanghai, and reports the previous day by default. It also supports manual `workflow_dispatch`.
 
 Manual runs default to `send_email=false` for safer testing. Scheduled runs send the daily email automatically.
 
