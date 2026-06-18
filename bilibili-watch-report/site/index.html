@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bilibili Watch Report</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f6f8fb; color: #16202a; }
+    main { max-width: 1040px; margin: 0 auto; padding: 32px 20px; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    .subtitle { margin: 0 0 24px; color: #5f6f7e; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .card, table { background: #fff; border: 1px solid #dce4ec; border-radius: 8px; }
+    .card { padding: 16px; }
+    .label { color: #607282; font-size: 13px; }
+    .value { font-size: 26px; font-weight: 750; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #edf1f5; }
+    th { color: #607282; font-size: 13px; background: #fbfcfe; }
+    .bar { height: 10px; background: #dce4ec; border-radius: 999px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: #157f8f; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Bilibili Watch Report</h1>
+  <p class="subtitle">Private daily watch-history dashboard generated from your saved metrics.</p>
+  <section class="cards" id="cards"></section>
+  <h2>Last 30 Days</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Records</th><th>Short</th><th>Long</th><th>Estimated Watch</th><th>Watch Ratio</th><th>80%+ Watched</th><th>15s Exit</th></tr></thead>
+    <tbody id="metrics"></tbody>
+  </table>
+</main>
+<script>
+function fmt(seconds) {
+  seconds = Math.max(0, Number(seconds || 0));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+function ratio(row) {
+  const total = Number(row.total_duration_seconds || 0);
+  if (!total) return '0.0%';
+  return `${((Number(row.estimated_watch_seconds || 0) / total) * 100).toFixed(1)}%`;
+}
+function pct(value) {
+  return `${(Number(value || 0) * 100).toFixed(1)}%`;
+}
+fetch('data.json')
+  .then((response) => response.json())
+  .then((data) => {
+    const metrics = data.metrics || [];
+    const latest = metrics[metrics.length - 1] || {};
+    const cards = [
+      ['Latest Date', latest.date || '-'],
+      ['Records', latest.total_records || 0],
+      ['Estimated Watch', fmt(latest.estimated_watch_seconds)],
+      ['Watch Ratio', ratio(latest)],
+      ['80%+ Watched', pct(latest.high_completion_video_ratio)],
+      ['15s Exit', pct(latest.quick_exit_video_ratio)]
+    ];
+    document.getElementById('cards').innerHTML = cards.map(([label, value]) =>
+      `<article class="card"><div class="label">${label}</div><div class="value">${value}</div></article>`
+    ).join('');
+    document.getElementById('metrics').innerHTML = metrics.map((row) =>
+      `<tr><td>${row.date}</td><td>${row.total_records}</td><td>${row.short_video_count}</td><td>${row.long_video_count}</td><td>${fmt(row.estimated_watch_seconds)}</td><td>${ratio(row)}</td><td>${pct(row.high_completion_video_ratio)}</td><td>${pct(row.quick_exit_video_ratio)}</td></tr>`
+    ).join('');
+  });
+</script>
+</body>
+</html>
