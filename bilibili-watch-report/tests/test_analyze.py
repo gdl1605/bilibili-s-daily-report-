@@ -1,7 +1,7 @@
 from datetime import date
 
 from bili_report.analyze import analyze_day, estimate_watch_seconds, is_short_video
-from bili_report.models import EnrichedHistoryItem
+from bili_report.models import DailyMetrics, EnrichedHistoryItem
 
 
 def make_item(
@@ -101,6 +101,20 @@ def test_analyze_day_dedupes_by_video_and_timestamp_and_builds_top_lists() -> No
     assert metrics.quick_exit_video_ratio == 0.0
     assert metrics.top_authors[0] == {"name": "Alice", "count": 2}
     assert metrics.top_categories[0] == {"name": "Tech", "count": 2}
+    assert metrics.category_breakdown == [
+        {
+            "name": "Tech",
+            "count": 2,
+            "estimated_watch_seconds": 630,
+            "total_duration_seconds": 1100,
+        },
+        {
+            "name": "Music",
+            "count": 1,
+            "estimated_watch_seconds": 50,
+            "total_duration_seconds": 100,
+        },
+    ]
 
 
 def test_analyze_day_reports_high_completion_and_quick_exit_ratios() -> None:
@@ -117,3 +131,27 @@ def test_analyze_day_reports_high_completion_and_quick_exit_ratios() -> None:
     assert metrics.high_completion_video_ratio == 0.25
     assert metrics.quick_exit_video_count == 1
     assert metrics.quick_exit_video_ratio == 0.25
+
+
+def test_daily_metrics_loads_old_json_without_category_breakdown() -> None:
+    metrics = DailyMetrics.from_dict(
+        {
+            "date": "2026-06-17",
+            "total_records": 1,
+            "unique_videos": 1,
+            "short_video_count": 0,
+            "long_video_count": 1,
+            "estimated_watch_seconds": 30,
+            "total_duration_seconds": 120,
+            "completion_rate_avg": 0.25,
+            "high_completion_video_count": 0,
+            "high_completion_video_ratio": 0.0,
+            "quick_exit_video_count": 0,
+            "quick_exit_video_ratio": 0.0,
+            "top_authors": [],
+            "top_categories": [],
+            "warnings": [],
+        }
+    )
+
+    assert metrics.category_breakdown == []

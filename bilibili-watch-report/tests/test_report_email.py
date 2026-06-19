@@ -1,8 +1,10 @@
+import json
 from datetime import date
 from email.message import EmailMessage
 from pathlib import Path
 
 from bili_report.emailer import EmailAttachment, SmtpConfig, send_daily_email
+from bili_report.comparison import build_daily_comparison
 from bili_report.models import DailyInsight, DailyMetrics, EnrichedHistoryItem
 from bili_report.report import build_compact_email_html, build_email_html, render_dashboard
 
@@ -48,7 +50,34 @@ def metrics() -> DailyMetrics:
         quick_exit_video_ratio=0.3333,
         top_authors=[{"name": "Alice", "count": 2}],
         top_categories=[{"name": "Tech", "count": 2}],
+        category_breakdown=[
+            {"name": "Tech", "count": 2, "estimated_watch_seconds": 500, "total_duration_seconds": 900},
+            {"name": "Music", "count": 1, "estimated_watch_seconds": 180, "total_duration_seconds": 300},
+        ],
         warnings=["1 item used conservative watch-time estimate"],
+    )
+
+
+def previous_metrics() -> DailyMetrics:
+    return DailyMetrics(
+        date="2026-06-16",
+        total_records=2,
+        unique_videos=2,
+        short_video_count=1,
+        long_video_count=1,
+        estimated_watch_seconds=300,
+        total_duration_seconds=900,
+        completion_rate_avg=0.4,
+        high_completion_video_count=0,
+        high_completion_video_ratio=0.0,
+        quick_exit_video_count=1,
+        quick_exit_video_ratio=0.5,
+        top_authors=[{"name": "Bob", "count": 1}],
+        top_categories=[{"name": "Music", "count": 2}],
+        category_breakdown=[
+            {"name": "Music", "count": 2, "estimated_watch_seconds": 300, "total_duration_seconds": 900}
+        ],
+        warnings=[],
     )
 
 
@@ -70,7 +99,8 @@ def entries() -> list[EnrichedHistoryItem]:
 
 
 def test_email_html_contains_core_metrics_and_estimation_notice() -> None:
-    html = build_email_html(metrics(), entries(), dashboard_url="https://example.com/report")
+    comparison = build_daily_comparison(metrics(), [previous_metrics()])
+    html = build_email_html(metrics(), entries(), dashboard_url="https://example.com/report", comparison=comparison)
 
     assert "2026-06-17" in html
     assert "3" in html
@@ -85,6 +115,10 @@ def test_email_html_contains_core_metrics_and_estimation_notice() -> None:
     assert "可看时长共" not in html
     assert "https://example.com/report" in html
     assert "Alice" in html
+    assert "历史变化" in html
+    assert "较昨日" in html
+    assert "较近 7 日" in html
+    assert "分类变化" in html
 
 
 def test_email_html_matches_daily_design_shell_without_runtime_scripts() -> None:
@@ -109,6 +143,7 @@ def test_email_html_matches_daily_design_shell_without_runtime_scripts() -> None
 
 
 def test_compact_email_body_is_mobile_and_qq_friendly() -> None:
+    comparison = build_daily_comparison(metrics(), [previous_metrics()])
     body = build_compact_email_html(
         metrics(),
         DailyInsight(
@@ -120,6 +155,7 @@ def test_compact_email_body_is_mobile_and_qq_friendly() -> None:
             warnings=[],
         ),
         dashboard_url="https://example.com/report",
+        comparison=comparison,
     )
     lowered = body.lower()
 
@@ -128,6 +164,10 @@ def test_compact_email_body_is_mobile_and_qq_friendly() -> None:
     assert "记得给眼睛" in body
     assert "明天先挑" in body
     assert "估算观看时长" in body
+    assert "变化速览" in body
+    assert "较昨日" in body
+    assert "较近 7 日" in body
+    assert "分区" in body
     assert "观看占比" in body
     assert "平均完成率" in body
     assert "Top UP 主" in body
@@ -147,17 +187,36 @@ def test_compact_email_body_is_mobile_and_qq_friendly() -> None:
 
 
 def test_dashboard_renders_static_html_and_json(tmp_path: Path) -> None:
-    render_dashboard(output_dir=tmp_path, metrics_history=[metrics()], recent_entries={"2026-06-17": entries()})
+    render_dashboard(
+        output_dir=tmp_path,
+        metrics_history=[previous_metrics(), metrics()],
+        recent_entries={"2026-06-17": entries()},
+    )
 
     assert (tmp_path / "index.html").exists()
     data = (tmp_path / "data.json").read_text(encoding="utf-8")
+    parsed = json.loads(data)
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert '"date": "2026-06-17"' in data
+    assert parsed["metrics"][-1]["changes"]["vs_yesterday"]["estimated_watch_seconds_delta"] == 380
+    assert parsed["metrics"][-1]["changes"]["vs_yesterday"]["watch_ratio_delta_pp"] == 23.3
+    assert parsed["metrics"][-1]["changes"]["vs_yesterday"]["quick_exit_ratio_delta_pp"] == -16.7
     assert "Bilibili Watch Report" in html
     assert "Watch Ratio" in html
+    assert "Watch Δ" in html
+    assert "Watch Ratio Δ" in html
+    assert "15s Exit Δ" in html
     assert "80%+ Watched" in html
     assert "15s Exit" in html
     assert "Total Duration" not in html
+
+
+def test_dashboard_handles_insufficient_history_without_crashing(tmp_path: Path) -> None:
+    render_dashboard(output_dir=tmp_path, metrics_history=[metrics()], recent_entries={})
+
+    parsed = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))
+
+    assert parsed["metrics"][0]["changes"]["vs_yesterday"]["available"] is False
 
 
 def test_send_daily_email_uses_smtp_config_and_html_body() -> None:

@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 import bili_report.insights as insights
 import pytest
 
+from bili_report.comparison import build_daily_comparison
 from bili_report.config import AppConfig
 from bili_report.insights import build_ai_payload, generate_daily_insight
 from bili_report.models import DailyMetrics
@@ -32,6 +33,10 @@ def make_metrics(
         quick_exit_video_ratio=quick_ratio,
         top_authors=[{"name": "Alice", "count": 2}, {"name": "Bob", "count": 1}],
         top_categories=[{"name": "Tech", "count": 3}, {"name": "Music", "count": 1}],
+        category_breakdown=[
+            {"name": "Tech", "count": 3, "estimated_watch_seconds": 360, "total_duration_seconds": 700},
+            {"name": "Music", "count": 1, "estimated_watch_seconds": 120, "total_duration_seconds": 250},
+        ],
         warnings=["1 item used conservative watch-time estimate"],
     )
 
@@ -213,18 +218,38 @@ def test_missing_ai_key_or_model_falls_back_to_rules() -> None:
 
 
 def test_ai_payload_contains_only_aggregate_metrics_and_trends() -> None:
-    payload = build_ai_payload(make_metrics(17), [make_metrics(day) for day in range(1, 18)])
+    current = make_metrics(17)
+    history = [make_metrics(day) for day in range(1, 18)]
+    comparison = build_daily_comparison(current, history)
+    payload = build_ai_payload(current, history, comparison=comparison)
     serialized = json.dumps(payload, ensure_ascii=False)
 
     assert payload["current_day"]["top_authors"][0] == {"name": "Alice", "count": 2}
     assert payload["trends"]["last_7_days"]["days"] == 7
     assert payload["trends"]["last_30_days"]["days"] == 17
+    assert payload["comparison"]["vs_yesterday"]["available"] is True
+    assert "category_changes" in payload["comparison"]["vs_recent_7d"]
     assert "title" not in serialized.lower()
     assert "raw" not in serialized.lower()
     assert "cookie-secret" not in serialized
     assert "mail-secret" not in serialized
     assert "bot@example.com" not in serialized
     assert "me@example.com" not in serialized
+
+
+def test_rule_based_insight_uses_comparison_when_available() -> None:
+    current = make_metrics(17, watch_seconds=900, quick_ratio=0.1)
+    yesterday = make_metrics(16, watch_seconds=300, quick_ratio=0.5)
+
+    insight = generate_daily_insight(
+        current,
+        [yesterday],
+        config=make_config(ai_enabled=False),
+        urlopen=lambda *_args, **_kwargs: pytest.fail("AI HTTP should not be called when disabled"),
+    )
+
+    assert "较昨日" in insight.summary
+    assert "快速划走较昨日下降" in insight.reminder
 
 
 class FakeResponse:

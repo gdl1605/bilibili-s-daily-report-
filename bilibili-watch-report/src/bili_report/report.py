@@ -7,7 +7,8 @@ import re
 from datetime import date
 from pathlib import Path
 
-from .models import DailyInsight, DailyMetrics, EnrichedHistoryItem
+from .comparison import build_daily_comparison
+from .models import DailyComparison, DailyInsight, DailyMetrics, EnrichedHistoryItem
 
 PINK = "#FB7299"
 PINK_SOFT = "#fb9ab5"
@@ -24,6 +25,7 @@ def build_email_html(
     entries: list[EnrichedHistoryItem],
     *,
     dashboard_url: str | None = None,
+    comparison: DailyComparison | None = None,
 ) -> str:
     watch_ratio = _safe_ratio(metrics.estimated_watch_seconds, metrics.total_duration_seconds)
     completion_ratio = _clamp(metrics.completion_rate_avg)
@@ -154,6 +156,8 @@ def build_email_html(
         </article>
       </section>
 
+      {_render_history_comparison(comparison)}
+
       <section style="background:#fff; border:1px solid #ececf0; border-radius:16px; padding:22px; margin-bottom:14px; animation:fadeUp .5s ease .25s both;">
         <div style="font-size:14px; font-weight:700; margin-bottom:4px;">最近观看</div>
         <div style="font-size:12px; color:#a1a1aa; margin-bottom:8px;">当日最新的 10 条记录</div>
@@ -177,6 +181,7 @@ def build_compact_email_html(
     insight: DailyInsight,
     *,
     dashboard_url: str | None = None,
+    comparison: DailyComparison | None = None,
 ) -> str:
     dashboard_link = (
         f'<a href="{html.escape(dashboard_url, quote=True)}" '
@@ -233,6 +238,7 @@ def build_compact_email_html(
               </table>
             </td>
           </tr>
+          {_render_compact_comparison(comparison)}
           <tr>
             <td style="padding:8px 18px 16px;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; border:1px solid #ececf0;">
@@ -267,9 +273,16 @@ def render_dashboard(
     recent_entries: dict[str, list[EnrichedHistoryItem]],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    metrics = sorted(metrics_history, key=lambda item: item.date)[-30:]
+    all_metrics = sorted(metrics_history, key=lambda item: item.date)
+    metrics = all_metrics[-30:]
+    rows_with_changes = []
+    for metric in metrics:
+        comparison = build_daily_comparison(metric, all_metrics)
+        row = metric.to_dict()
+        row["changes"] = _dashboard_change_summary(comparison)
+        rows_with_changes.append(row)
     data = {
-        "metrics": [metric.to_dict() for metric in metrics],
+        "metrics": rows_with_changes,
         "recent_entries": {
             day: [entry.to_dict() for entry in entries[:20]]
             for day, entries in sorted(recent_entries.items())
@@ -383,6 +396,117 @@ def _render_rank_list(rows: list[dict]) -> str:
     return f"<ol>{items}</ol>"
 
 
+def _render_history_comparison(comparison: DailyComparison | None) -> str:
+    if comparison is None:
+        return ""
+    return f"""<section style="background:#fff; border:1px solid #ececf0; border-radius:16px; padding:22px; margin-bottom:14px; animation:fadeUp .5s ease .23s both;">
+        <div style="font-size:14px; font-weight:700; margin-bottom:4px;">历史变化</div>
+        <div style="font-size:12px; color:#a1a1aa; margin-bottom:14px;">相较昨日与近 7 日历史均值的核心变化</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:9px 10px; color:#71717a; border-bottom:1px solid #ececf0;">指标</th>
+                <th style="text-align:left; padding:9px 10px; color:#71717a; border-bottom:1px solid #ececf0;">较昨日</th>
+                <th style="text-align:left; padding:9px 10px; color:#71717a; border-bottom:1px solid #ececf0;">较近 7 日</th>
+              </tr>
+            </thead>
+            <tbody>
+              {_render_comparison_table_row("观看记录", comparison, "total_records", "count")}
+              {_render_comparison_table_row("估算观看时长", comparison, "estimated_watch_seconds", "duration")}
+              {_render_comparison_table_row("观看占比", comparison, "watch_ratio", "ratio")}
+              {_render_comparison_table_row("平均完成率", comparison, "completion_rate_avg", "ratio")}
+              {_render_comparison_table_row("深度观看占比", comparison, "high_completion_video_ratio", "ratio")}
+              {_render_comparison_table_row("快速划走占比", comparison, "quick_exit_video_ratio", "ratio")}
+              {_render_comparison_table_row("短视频占比", comparison, "short_video_ratio", "ratio")}
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:13px; font-weight:700; margin:18px 0 10px;">分类变化 Top</div>
+        {_render_category_changes(comparison)}
+      </section>"""
+
+
+def _render_comparison_table_row(label: str, comparison: DailyComparison, key: str, value_type: str) -> str:
+    return (
+        "<tr>"
+        f'<td style="padding:9px 10px; border-bottom:1px solid #f2f2f4; font-weight:600;">{html.escape(label)}</td>'
+        f'<td style="padding:9px 10px; border-bottom:1px solid #f2f2f4;">{_format_window_delta(comparison.vs_yesterday, key, value_type)}</td>'
+        f'<td style="padding:9px 10px; border-bottom:1px solid #f2f2f4;">{_format_window_delta(comparison.vs_recent_7d, key, value_type)}</td>'
+        "</tr>"
+    )
+
+
+def _render_category_changes(comparison: DailyComparison) -> str:
+    rows = comparison.vs_recent_7d.category_changes or comparison.vs_yesterday.category_changes
+    if not rows:
+        warning = comparison.vs_recent_7d.warnings[0] if comparison.vs_recent_7d.warnings else "暂无历史分类数据"
+        return f'<p style="margin:0; color:#a1a1aa; font-size:13px;">{html.escape(warning)}</p>'
+    items = []
+    for row in rows[:5]:
+        status = {"new": "新增", "risen": "上升", "fallen": "下降", "flat": "持平"}.get(str(row.get("status")), "持平")
+        items.append(
+            "<li>"
+            f'{html.escape(str(row.get("name") or "Unknown"))}：{status}，'
+            f'份额 {_format_signed_pp(float(row.get("share_delta_pp") or 0))}，'
+            f'数量 {_format_signed_number(float(row.get("count_delta") or 0))}'
+            "</li>"
+        )
+    return f'<ol style="margin:0; padding-left:20px; color:#52525b; font-size:13px; line-height:1.8;">{"".join(items)}</ol>'
+
+
+def _render_compact_comparison(comparison: DailyComparison | None) -> str:
+    if comparison is None:
+        return ""
+    lines = _compact_comparison_lines(comparison)
+    rows = "".join(
+        f'<tr><td style="padding:8px 12px; border-top:1px solid #ececf0; font-size:13px; line-height:1.6;">{html.escape(line)}</td></tr>'
+        for line in lines
+    )
+    return f"""<tr>
+            <td style="padding:8px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; border:1px solid #ececf0;">
+                <tr>
+                  <td style="padding:10px 12px; font-size:14px; font-weight:bold; background:#f8f9fb;">变化速览</td>
+                </tr>
+                {rows}
+              </table>
+            </td>
+          </tr>"""
+
+
+def _compact_comparison_lines(comparison: DailyComparison) -> list[str]:
+    lines = []
+    if comparison.vs_yesterday.available:
+        lines.extend(
+            [
+                f"较昨日：观看时长{_format_window_delta(comparison.vs_yesterday, 'estimated_watch_seconds', 'duration')}，记录数{_format_window_delta(comparison.vs_yesterday, 'total_records', 'count')}。",
+                f"较昨日：观看占比{_format_window_delta(comparison.vs_yesterday, 'watch_ratio', 'ratio')}，快速划走{_format_window_delta(comparison.vs_yesterday, 'quick_exit_video_ratio', 'ratio')}。",
+            ]
+        )
+    else:
+        lines.append(f"较昨日：{comparison.vs_yesterday.warnings[0] if comparison.vs_yesterday.warnings else '暂无可比数据'}。")
+
+    if comparison.vs_recent_7d.available:
+        lines.extend(
+            [
+                f"较近 7 日：观看时长{_format_window_delta(comparison.vs_recent_7d, 'estimated_watch_seconds', 'duration')}，记录数{_format_window_delta(comparison.vs_recent_7d, 'total_records', 'count')}。",
+                f"较近 7 日：短视频占比{_format_window_delta(comparison.vs_recent_7d, 'short_video_ratio', 'ratio')}，完成率{_format_window_delta(comparison.vs_recent_7d, 'completion_rate_avg', 'ratio')}。",
+            ]
+        )
+    else:
+        lines.append(f"较近 7 日：{comparison.vs_recent_7d.warnings[0] if comparison.vs_recent_7d.warnings else '暂无可比数据'}。")
+
+    category = (comparison.vs_recent_7d.category_changes or comparison.vs_yesterday.category_changes or [])[:1]
+    if category:
+        row = category[0]
+        status = {"new": "新增", "risen": "上升", "fallen": "下降", "flat": "持平"}.get(str(row.get("status")), "持平")
+        lines.append(
+            f"分区迁移：{row.get('name') or 'Unknown'} {status}，份额{_format_signed_pp(float(row.get('share_delta_pp') or 0))}。"
+        )
+    return lines[:5]
+
+
 def _compact_text_row(label: str, value: str) -> str:
     return (
         '<tr>'
@@ -441,6 +565,42 @@ def _format_ratio(metrics: DailyMetrics) -> str:
     if metrics.total_duration_seconds <= 0:
         return "0.0%"
     return _format_percent(metrics.estimated_watch_seconds / metrics.total_duration_seconds)
+
+
+def _format_window_delta(window: object, key: str, value_type: str) -> str:
+    if not getattr(window, "available", False):
+        return "暂无"
+    metrics = getattr(window, "metrics")
+    row = metrics.get(key) or {}
+    if value_type == "ratio":
+        return _format_signed_pp(float(row.get("delta_pp") or 0))
+    value = float(row.get("delta") or 0)
+    if value_type == "duration":
+        return _format_signed_duration(value)
+    return _format_signed_number(value)
+
+
+def _format_signed_duration(seconds: float) -> str:
+    if seconds == 0:
+        return "持平"
+    direction = "增加" if seconds > 0 else "减少"
+    return f"{direction} {_format_seconds(int(abs(seconds)))}"
+
+
+def _format_signed_number(value: float) -> str:
+    if value == 0:
+        return "持平"
+    direction = "增加" if value > 0 else "减少"
+    absolute = abs(value)
+    text = str(int(absolute)) if absolute.is_integer() else f"{absolute:.1f}"
+    return f"{direction} {text}"
+
+
+def _format_signed_pp(value: float) -> str:
+    if value == 0:
+        return "持平"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.1f} 个百分点"
 
 
 def _format_percent(value: float) -> str:
@@ -504,6 +664,31 @@ def _clamp(value: float) -> float:
     return min(1.0, max(0.0, float(value)))
 
 
+def _dashboard_change_summary(comparison: DailyComparison) -> dict[str, dict[str, object]]:
+    return {
+        "vs_yesterday": _dashboard_window_summary(comparison.vs_yesterday),
+        "vs_recent_7d": _dashboard_window_summary(comparison.vs_recent_7d),
+    }
+
+
+def _dashboard_window_summary(window: object) -> dict[str, object]:
+    if not getattr(window, "available", False):
+        return {
+            "available": False,
+            "baseline_days": getattr(window, "baseline_days", 0),
+            "warnings": list(getattr(window, "warnings", [])),
+        }
+    metrics = getattr(window, "metrics")
+    return {
+        "available": True,
+        "baseline_days": getattr(window, "baseline_days", 0),
+        "estimated_watch_seconds_delta": metrics["estimated_watch_seconds"]["delta"],
+        "watch_ratio_delta_pp": metrics["watch_ratio"]["delta_pp"],
+        "quick_exit_ratio_delta_pp": metrics["quick_exit_video_ratio"]["delta_pp"],
+        "warnings": list(getattr(window, "warnings", [])),
+    }
+
+
 def _dashboard_html() -> str:
     return """<!doctype html>
 <html lang="en">
@@ -536,7 +721,7 @@ def _dashboard_html() -> str:
   <section class="cards" id="cards"></section>
   <h2>Last 30 Days</h2>
   <table>
-    <thead><tr><th>Date</th><th>Records</th><th>Short</th><th>Long</th><th>Estimated Watch</th><th>Watch Ratio</th><th>80%+ Watched</th><th>15s Exit</th></tr></thead>
+    <thead><tr><th>Date</th><th>Records</th><th>Short</th><th>Long</th><th>Estimated Watch</th><th>Watch Δ</th><th>Watch Ratio</th><th>Watch Ratio Δ</th><th>80%+ Watched</th><th>15s Exit</th><th>15s Exit Δ</th></tr></thead>
     <tbody id="metrics"></tbody>
   </table>
 </main>
@@ -556,6 +741,18 @@ function ratio(row) {
 function pct(value) {
   return `${(Number(value || 0) * 100).toFixed(1)}%`;
 }
+function deltaSeconds(value) {
+  value = Number(value || 0);
+  if (!value) return '0m';
+  const sign = value > 0 ? '+' : '-';
+  return `${sign}${fmt(Math.abs(value))}`;
+}
+function deltaPp(value) {
+  value = Number(value || 0);
+  if (!value) return '0.0pp';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}pp`;
+}
 fetch('data.json')
   .then((response) => response.json())
   .then((data) => {
@@ -572,9 +769,10 @@ fetch('data.json')
     document.getElementById('cards').innerHTML = cards.map(([label, value]) =>
       `<article class="card"><div class="label">${label}</div><div class="value">${value}</div></article>`
     ).join('');
-    document.getElementById('metrics').innerHTML = metrics.map((row) =>
-      `<tr><td>${row.date}</td><td>${row.total_records}</td><td>${row.short_video_count}</td><td>${row.long_video_count}</td><td>${fmt(row.estimated_watch_seconds)}</td><td>${ratio(row)}</td><td>${pct(row.high_completion_video_ratio)}</td><td>${pct(row.quick_exit_video_ratio)}</td></tr>`
-    ).join('');
+    document.getElementById('metrics').innerHTML = metrics.map((row) => {
+      const change = ((row.changes || {}).vs_yesterday || {});
+      return `<tr><td>${row.date}</td><td>${row.total_records}</td><td>${row.short_video_count}</td><td>${row.long_video_count}</td><td>${fmt(row.estimated_watch_seconds)}</td><td>${change.available ? deltaSeconds(change.estimated_watch_seconds_delta) : '-'}</td><td>${ratio(row)}</td><td>${change.available ? deltaPp(change.watch_ratio_delta_pp) : '-'}</td><td>${pct(row.high_completion_video_ratio)}</td><td>${pct(row.quick_exit_video_ratio)}</td><td>${change.available ? deltaPp(change.quick_exit_ratio_delta_pp) : '-'}</td></tr>`;
+    }).join('');
   });
 </script>
 </body>

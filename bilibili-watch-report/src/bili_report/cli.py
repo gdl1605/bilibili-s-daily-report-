@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from .analyze import analyze_day
 from .client import BiliClient
+from .comparison import build_daily_comparison
 from .config import AppConfig
 from .emailer import EmailAttachment, SmtpConfig, send_daily_email
 from .insights import generate_daily_insight
@@ -96,7 +97,8 @@ def _build_report(args: argparse.Namespace) -> None:
     metrics = analyze_day(entries, target_date=target_date)
     _upsert_metrics(output_dir, metrics)
     _render_site(output_dir, target_date, metrics, entries)
-    html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url)
+    comparison = build_daily_comparison(metrics, _load_metrics_with_current(output_dir, metrics))
+    html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url, comparison=comparison)
     _report_path(output_dir, target_date).write_text(html, encoding="utf-8")
 
 
@@ -106,9 +108,11 @@ def _send_email(args: argparse.Namespace) -> None:
     config = AppConfig.from_env(dotenv_path=args.dotenv, require_email=True)
     entries = _read_enriched(_enriched_path(output_dir, target_date))
     metrics = _metrics_for_date(output_dir, target_date) or analyze_day(entries, target_date=target_date)
-    full_html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url)
-    insight = generate_daily_insight(metrics, _load_metrics_with_current(output_dir, metrics), config=config)
-    body_html = build_compact_email_html(metrics, insight, dashboard_url=args.dashboard_url)
+    metrics_history = _load_metrics_with_current(output_dir, metrics)
+    comparison = build_daily_comparison(metrics, metrics_history)
+    full_html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url, comparison=comparison)
+    insight = generate_daily_insight(metrics, metrics_history, config=config)
+    body_html = build_compact_email_html(metrics, insight, dashboard_url=args.dashboard_url, comparison=comparison)
     _send(config, metrics, body_html, attachment_html=full_html)
 
 
@@ -122,12 +126,14 @@ def _run_daily(args: argparse.Namespace) -> None:
     _upsert_metrics(output_dir, metrics)
     _render_site(output_dir, target_date, metrics, entries)
     dashboard_url = args.dashboard_url or os.environ.get("GITHUB_PAGES_URL")
-    html = build_email_html(metrics, entries, dashboard_url=dashboard_url)
+    metrics_history = _load_metrics_with_current(output_dir, metrics)
+    comparison = build_daily_comparison(metrics, metrics_history)
+    html = build_email_html(metrics, entries, dashboard_url=dashboard_url, comparison=comparison)
     _report_path(output_dir, target_date).write_text(html, encoding="utf-8")
     if not args.skip_email:
         config = AppConfig.from_env(dotenv_path=args.dotenv, require_email=True)
-        insight = generate_daily_insight(metrics, _load_metrics_with_current(output_dir, metrics), config=config)
-        body_html = build_compact_email_html(metrics, insight, dashboard_url=dashboard_url)
+        insight = generate_daily_insight(metrics, metrics_history, config=config)
+        body_html = build_compact_email_html(metrics, insight, dashboard_url=dashboard_url, comparison=comparison)
         _send(config, metrics, body_html, attachment_html=html)
 
 

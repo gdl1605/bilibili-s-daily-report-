@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Any
 
@@ -41,12 +41,19 @@ def analyze_day(
     quick_exit_count = 0
     completion_rates: list[float] = []
     conservative_estimates = 0
+    category_totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"count": 0, "estimated_watch_seconds": 0, "total_duration_seconds": 0}
+    )
 
     for item in deduped:
         watched = estimate_watch_seconds(item.progress, item.duration)
         estimated_watch += watched
+        category_name = item.tname or "Unknown"
+        category_totals[category_name]["count"] += 1
+        category_totals[category_name]["estimated_watch_seconds"] += watched
         if item.duration:
             total_duration += item.duration
+            category_totals[category_name]["total_duration_seconds"] += item.duration
             completion_rate = watched / item.duration
             completion_rates.append(completion_rate)
             if completion_rate >= 0.8:
@@ -79,6 +86,7 @@ def analyze_day(
         quick_exit_video_ratio=round(quick_exit_count / len(deduped), 4) if deduped else 0.0,
         top_authors=_top_counts(item.author_name or "Unknown" for item in deduped),
         top_categories=_top_counts(item.tname or "Unknown" for item in deduped),
+        category_breakdown=_category_breakdown(category_totals),
         warnings=warnings,
     )
 
@@ -98,6 +106,19 @@ def _dedupe(items: list[EnrichedHistoryItem]) -> list[EnrichedHistoryItem]:
 def _top_counts(values: Any, *, limit: int = 5) -> list[dict[str, Any]]:
     counter = Counter(values)
     return [{"name": name, "count": count} for name, count in counter.most_common(limit)]
+
+
+def _category_breakdown(category_totals: dict[str, dict[str, int]]) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "name": name,
+            "count": values["count"],
+            "estimated_watch_seconds": values["estimated_watch_seconds"],
+            "total_duration_seconds": values["total_duration_seconds"],
+        }
+        for name, values in category_totals.items()
+    ]
+    return sorted(rows, key=lambda row: (-int(row["count"]), str(row["name"])))
 
 
 def _explicit_short_signal(raw: dict[str, Any]) -> bool | None:

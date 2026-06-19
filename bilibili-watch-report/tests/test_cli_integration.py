@@ -43,6 +43,32 @@ def test_run_daily_with_fixtures_generates_raw_enriched_metrics_and_site(tmp_pat
     assert (tmp_path / "site" / "data.json").exists()
 
 
+def test_run_daily_skip_email_does_not_call_ai_or_send_email(tmp_path: Path, monkeypatch) -> None:
+    def fail_generate(*_args, **_kwargs):
+        raise AssertionError("AI insight should not be generated when --skip-email is used")
+
+    def fail_send(*_args, **_kwargs):
+        raise AssertionError("Email should not be sent when --skip-email is used")
+
+    monkeypatch.setattr(cli, "generate_daily_insight", fail_generate)
+    monkeypatch.setattr(cli, "send_daily_email", fail_send)
+
+    exit_code = main(
+        [
+            "run-daily",
+            "--date",
+            "2026-06-17",
+            "--fixtures",
+            "tests/fixtures",
+            "--output-dir",
+            str(tmp_path),
+            "--skip-email",
+        ]
+    )
+
+    assert exit_code == 0
+
+
 def test_send_email_uses_compact_body_and_full_report_attachment(tmp_path: Path, monkeypatch) -> None:
     exit_code = main(
         [
@@ -96,6 +122,7 @@ def test_send_email_uses_compact_body_and_full_report_attachment(tmp_path: Path,
     attachment_html = attachment.content.decode("utf-8")
     assert "B 站观看日报速览" in body
     assert "今日洞察" in body
+    assert "变化速览" in body
     assert "<table" in body.lower()
     assert "<svg" not in body.lower()
     assert "display:grid" not in body.lower()

@@ -8,9 +8,10 @@ Private daily Bilibili watch-history analytics. The project fetches your own Bil
 - Long versus short video count.
 - Estimated watch time from `progress`, clipped to `[0, duration]`.
 - Total video duration.
-- Top authors and categories.
+- Top authors, Top categories, and full per-category aggregate breakdown.
+- Historical changes versus yesterday and the prior available 7 daily metric rows.
 - Daily insight summary, encouragement, reminder, and tomorrow goal.
-- A static dashboard for the latest 30 days.
+- A static dashboard for the latest 30 days, including daily watch-time, watch-ratio, and quick-exit changes.
 
 Short-video classification prefers any explicit API signal when present. If Bilibili does not provide one, videos shorter than 180 seconds are treated as short videos.
 
@@ -70,6 +71,7 @@ Email behavior:
 
 - `build-report` writes the full visual HTML report to `data/reports/YYYY-MM-DD.html`.
 - `send-email` and `run-daily` use a compact table-based email body for better mobile and QQ Mail compatibility.
+- Both the compact email and attached full report include historical change summaries when prior aggregate metrics are available.
 - The full visual HTML report is still attached to the email as `bilibili-report-YYYY-MM-DD.html`.
 
 ## GitHub Actions
@@ -112,6 +114,6 @@ This is intended for personal use only. Bilibili history access depends on non-p
 
 The client is intentionally low frequency: the scheduled job runs once per day, requests are rate-limited, and retry behavior is conservative. If the cookie expires, the job fails with an authentication error instead of trying to bypass login.
 
-AI insights are opt-in and fail open to local rules: missing AI settings, timeouts, HTTP failures, bad JSON, or incomplete AI output do not block email sending. When enabled, the AI payload is limited to aggregate daily metrics, Top UP/category counts, and 7/30-day trend aggregates. It must not include video titles, raw/enriched history, cookies, SMTP credentials, email addresses, or full request headers.
+AI insights are opt-in and fail open to local rules: missing AI settings, timeouts, HTTP failures, bad JSON, or incomplete AI output do not block email sending. When enabled, the AI payload is limited to aggregate daily metrics, Top UP/category counts, 7/30-day trend aggregates, and aggregate historical comparison data. It must not include video titles, raw/enriched history, cookies, SMTP credentials, email addresses, or full request headers.
 
 Known rendering limitation: QQ Mail and some mobile attachment viewers may not render inline SVG charts in the attached full HTML report and may show `[SVG Image]` placeholders. The compact email body avoids SVG; replacing full-report SVG charts with image or non-SVG HTML charts is a future improvement.

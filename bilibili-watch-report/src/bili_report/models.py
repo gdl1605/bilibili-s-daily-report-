@@ -114,6 +114,7 @@ class DailyMetrics:
     quick_exit_video_ratio: float
     top_authors: list[dict[str, Any]]
     top_categories: list[dict[str, Any]]
+    category_breakdown: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @classmethod
@@ -133,7 +134,50 @@ class DailyMetrics:
             quick_exit_video_ratio=float(data.get("quick_exit_video_ratio") or 0.0),
             top_authors=list(data.get("top_authors") or []),
             top_categories=list(data.get("top_categories") or []),
+            category_breakdown=list(data.get("category_breakdown") or []),
             warnings=list(data.get("warnings") or []),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class ComparisonWindow:
+    label: str
+    available: bool
+    baseline_days: int
+    metrics: dict[str, dict[str, Any]] = field(default_factory=dict)
+    category_changes: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ComparisonWindow":
+        return cls(
+            label=str(data.get("label") or ""),
+            available=bool(data.get("available")),
+            baseline_days=int(data.get("baseline_days") or 0),
+            metrics=dict(data.get("metrics") or {}),
+            category_changes=list(data.get("category_changes") or []),
+            warnings=list(data.get("warnings") or []),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class DailyComparison:
+    date: str
+    vs_yesterday: ComparisonWindow
+    vs_recent_7d: ComparisonWindow
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailyComparison":
+        return cls(
+            date=str(data.get("date") or ""),
+            vs_yesterday=ComparisonWindow.from_dict(dict(data.get("vs_yesterday") or {})),
+            vs_recent_7d=ComparisonWindow.from_dict(dict(data.get("vs_recent_7d") or {})),
         )
 
     def to_dict(self) -> dict[str, Any]:

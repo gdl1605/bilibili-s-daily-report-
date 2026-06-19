@@ -8,8 +8,9 @@ from urllib import request
 
 import certifi
 
+from .comparison import build_daily_comparison
 from .config import AppConfig
-from .models import DailyInsight, DailyMetrics
+from .models import DailyComparison, DailyInsight, DailyMetrics
 
 UrlOpen = Callable[..., Any]
 
@@ -21,7 +22,8 @@ def generate_daily_insight(
     config: AppConfig,
     urlopen: UrlOpen | None = None,
 ) -> DailyInsight:
-    fallback = build_rule_based_insight(metrics, metrics_history)
+    comparison = build_daily_comparison(metrics, metrics_history)
+    fallback = build_rule_based_insight(metrics, metrics_history, comparison=comparison)
     if not config.ai_enabled:
         return fallback
     if not config.ai_api_key or not config.ai_model:
@@ -31,6 +33,7 @@ def generate_daily_insight(
         return _request_ai_insight(
             metrics,
             metrics_history,
+            comparison=comparison,
             config=config,
             urlopen=urlopen or _default_urlopen,
         )
@@ -38,8 +41,14 @@ def generate_daily_insight(
         return _with_warning(fallback, f"AI insight fallback: {type(exc).__name__}")
 
 
-def build_rule_based_insight(metrics: DailyMetrics, metrics_history: list[DailyMetrics]) -> DailyInsight:
-    payload = build_ai_payload(metrics, metrics_history)
+def build_rule_based_insight(
+    metrics: DailyMetrics,
+    metrics_history: list[DailyMetrics],
+    *,
+    comparison: DailyComparison | None = None,
+) -> DailyInsight:
+    comparison = comparison or build_daily_comparison(metrics, metrics_history)
+    payload = build_ai_payload(metrics, metrics_history, comparison=comparison)
     last_7 = payload["trends"]["last_7_days"]
     top_category = _top_name(metrics.top_categories)
     top_author = _top_name(metrics.top_authors)
@@ -57,6 +66,12 @@ def build_rule_based_insight(metrics: DailyMetrics, metrics_history: list[DailyM
         if abs(delta) >= 60:
             direction = "高于" if delta > 0 else "低于"
             summary += f"观看时长{direction}近 7 日均值 {_format_seconds(abs(delta))}。"
+    yesterday = comparison.vs_yesterday
+    if yesterday.available:
+        watch_delta = yesterday.metrics["estimated_watch_seconds"]["delta"]
+        if abs(float(watch_delta)) >= 60:
+            direction = "增加" if watch_delta > 0 else "减少"
+            summary += f"较昨日观看时长{direction}{_format_seconds(abs(float(watch_delta)))}。"
 
     if metrics.total_records <= 0:
         encouragement = "今天几乎没有观看记录，留白也是一种节奏。"
@@ -67,7 +82,9 @@ def build_rule_based_insight(metrics: DailyMetrics, metrics_history: list[DailyM
     else:
         encouragement = "观看节奏比较平衡，可以继续保持轻量复盘。"
 
-    if metrics.warnings:
+    if yesterday.available and yesterday.metrics["quick_exit_video_ratio"]["delta_pp"] <= -5:
+        reminder = "快速划走较昨日下降，今天选内容更稳定。"
+    elif metrics.warnings:
         reminder = "部分视频缺少完整进度，观看时长已按保守规则估算。"
     elif metrics.estimated_watch_seconds >= 7200:
         reminder = "今天观看时间偏长，记得给眼睛和注意力安排休息。"
@@ -93,14 +110,21 @@ def build_rule_based_insight(metrics: DailyMetrics, metrics_history: list[DailyM
     )
 
 
-def build_ai_payload(metrics: DailyMetrics, metrics_history: list[DailyMetrics]) -> dict[str, Any]:
+def build_ai_payload(
+    metrics: DailyMetrics,
+    metrics_history: list[DailyMetrics],
+    *,
+    comparison: DailyComparison | None = None,
+) -> dict[str, Any]:
     history = _history_with_current(metrics, metrics_history)
+    comparison = comparison or build_daily_comparison(metrics, metrics_history)
     return {
         "current_day": _metric_snapshot(metrics),
         "trends": {
             "last_7_days": _aggregate_metrics(history[-7:], metrics),
             "last_30_days": _aggregate_metrics(history[-30:], metrics),
         },
+        "comparison": comparison.to_dict(),
     }
 
 
@@ -108,10 +132,11 @@ def _request_ai_insight(
     metrics: DailyMetrics,
     metrics_history: list[DailyMetrics],
     *,
+    comparison: DailyComparison,
     config: AppConfig,
     urlopen: UrlOpen,
 ) -> DailyInsight:
-    payload = build_ai_payload(metrics, metrics_history)
+    payload = build_ai_payload(metrics, metrics_history, comparison=comparison)
     body = {
         "model": config.ai_model,
         "messages": [
