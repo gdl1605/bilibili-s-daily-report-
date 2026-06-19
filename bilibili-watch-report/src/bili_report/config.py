@@ -23,6 +23,11 @@ class AppConfig:
     smtp_use_ssl: bool = True
     publish_pages: bool = False
     rate_limit_seconds: float = 0.3
+    ai_enabled: bool = False
+    ai_api_key: str | None = None
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_model: str | None = None
+    ai_timeout_seconds: float = 20.0
 
     @classmethod
     def from_env(
@@ -65,9 +70,14 @@ class AppConfig:
             smtp_use_ssl=smtp_use_ssl,
             publish_pages=_parse_bool(values.get("PUBLISH_PAGES"), default=False),
             rate_limit_seconds=float(values.get("BILI_RATE_LIMIT_SECONDS") or 0.3),
+            ai_enabled=_parse_bool(values.get("AI_ENABLED"), default=False),
+            ai_api_key=values.get("AI_API_KEY") or None,
+            ai_base_url=values.get("AI_BASE_URL") or "https://api.openai.com/v1",
+            ai_model=values.get("AI_MODEL") or None,
+            ai_timeout_seconds=float(values.get("AI_TIMEOUT_SECONDS") or 20.0),
         )
 
-    def safe_dict(self) -> dict[str, str | int | bool | None]:
+    def safe_dict(self) -> dict[str, str | int | float | bool | None]:
         return {
             "BILI_SESSDATA": "***",
             "BILI_BILI_JCT": "***",
@@ -80,6 +90,11 @@ class AppConfig:
             "SMTP_USE_SSL": self.smtp_use_ssl,
             "PUBLISH_PAGES": self.publish_pages,
             "BILI_RATE_LIMIT_SECONDS": self.rate_limit_seconds,
+            "AI_ENABLED": self.ai_enabled,
+            "AI_API_KEY": "***" if self.ai_api_key else None,
+            "AI_BASE_URL": self.ai_base_url,
+            "AI_MODEL": self.ai_model,
+            "AI_TIMEOUT_SECONDS": self.ai_timeout_seconds,
         }
 
 

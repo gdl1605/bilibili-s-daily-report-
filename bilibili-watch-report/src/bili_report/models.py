@@ -5,6 +5,30 @@ from typing import Any
 
 
 @dataclass(slots=True)
+class DailyInsight:
+    summary: str
+    encouragement: str
+    reminder: str
+    tomorrow_goal: str
+    source: str
+    warnings: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailyInsight":
+        return cls(
+            summary=str(data.get("summary") or ""),
+            encouragement=str(data.get("encouragement") or ""),
+            reminder=str(data.get("reminder") or ""),
+            tomorrow_goal=str(data.get("tomorrow_goal") or ""),
+            source=str(data.get("source") or "rules"),
+            warnings=list(data.get("warnings") or []),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class EnrichedHistoryItem:
     title: str
     bvid: str | None

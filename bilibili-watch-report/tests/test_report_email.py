@@ -3,8 +3,8 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from bili_report.emailer import EmailAttachment, SmtpConfig, send_daily_email
-from bili_report.models import DailyMetrics, EnrichedHistoryItem
-from bili_report.report import build_email_html, render_dashboard
+from bili_report.models import DailyInsight, DailyMetrics, EnrichedHistoryItem
+from bili_report.report import build_compact_email_html, build_email_html, render_dashboard
 
 
 class FakeSMTP:
@@ -81,6 +81,8 @@ def test_email_html_contains_core_metrics_and_estimation_notice() -> None:
     assert "15s 内退出" in html
     assert "33.3%" in html
     assert "视频总时长" not in html
+    assert "可看总时长" not in html
+    assert "可看时长共" not in html
     assert "https://example.com/report" in html
     assert "Alice" in html
 
@@ -104,6 +106,44 @@ def test_email_html_matches_daily_design_shell_without_runtime_scripts() -> None
     assert "support.js" not in html
     assert "<script" not in html.lower()
     assert "<x-dc" not in html.lower()
+
+
+def test_compact_email_body_is_mobile_and_qq_friendly() -> None:
+    body = build_compact_email_html(
+        metrics(),
+        DailyInsight(
+            summary="今天看了 3 条，估算观看 11m 20s。",
+            encouragement="高完成观看已经出现，节奏不错。",
+            reminder="记得给眼睛留一点休息时间。",
+            tomorrow_goal="明天先挑 1 个高质量长视频慢慢看。",
+            source="rules",
+            warnings=[],
+        ),
+        dashboard_url="https://example.com/report",
+    )
+    lowered = body.lower()
+
+    assert "今天看了 3 条" in body
+    assert "高完成观看已经出现" in body
+    assert "记得给眼睛" in body
+    assert "明天先挑" in body
+    assert "估算观看时长" in body
+    assert "观看占比" in body
+    assert "平均完成率" in body
+    assert "Top UP 主" in body
+    assert "Top 分区" in body
+    assert "Alice" in body
+    assert "Tech" in body
+    assert "https://example.com/report" in body
+    assert "<table" in lowered
+    assert "<svg" not in lowered
+    assert "<script" not in lowered
+    assert "fonts.googleapis" not in lowered
+    assert "@keyframes" not in lowered
+    assert "display:grid" not in lowered
+    assert "grid-template" not in lowered
+    assert "可看总时长" not in body
+    assert "可看时长共" not in body
 
 
 def test_dashboard_renders_static_html_and_json(tmp_path: Path) -> None:

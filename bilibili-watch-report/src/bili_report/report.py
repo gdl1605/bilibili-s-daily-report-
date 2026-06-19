@@ -7,7 +7,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from .models import DailyMetrics, EnrichedHistoryItem
+from .models import DailyInsight, DailyMetrics, EnrichedHistoryItem
 
 PINK = "#FB7299"
 PINK_SOFT = "#fb9ab5"
@@ -91,7 +91,7 @@ def build_email_html(
       </header>
 
       <section class="kpi-grid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:14px; animation:fadeUp .5s ease .05s both;">
-        {_render_kpi_card("估算观看时长", _format_duration_metric(metrics.estimated_watch_seconds), f"可看时长共 {_format_seconds(metrics.total_duration_seconds)}")}
+        {_render_kpi_card("估算观看时长", _format_duration_metric(metrics.estimated_watch_seconds), f"观看占比 {_format_ratio(metrics)}")}
         {_render_kpi_card("平均完成率", _format_percent_metric(completion_ratio), "单视频平均看完比例")}
         {_render_kpi_card("深度观看", str(high_count), f"看完 80%+ · 占 {_format_percent(metrics.high_completion_video_ratio)}", value_color=PINK)}
         {_render_kpi_card("快速划走", str(quick_count), f"15s 内退出 · 占 {_format_percent(metrics.quick_exit_video_ratio)}", value_color="#8a93a3")}
@@ -120,7 +120,7 @@ def build_email_html(
           </div>
         </article>
 
-        {_render_gauge_card("观看时长占比", "实际观看 / 可看总时长", watch_ratio, PINK, _format_seconds(metrics.estimated_watch_seconds))}
+        {_render_gauge_card("观看时长占比", "估算观看 / 视频时长", watch_ratio, PINK, _format_seconds(metrics.estimated_watch_seconds))}
         {_render_gauge_card("平均完成率", "每个视频平均看完比例", completion_ratio, BLUE, "完成率")}
       </section>
 
@@ -168,6 +168,94 @@ def build_email_html(
       </footer>
     </div>
   </div>
+</body>
+</html>"""
+
+
+def build_compact_email_html(
+    metrics: DailyMetrics,
+    insight: DailyInsight,
+    *,
+    dashboard_url: str | None = None,
+) -> str:
+    dashboard_link = (
+        f'<a href="{html.escape(dashboard_url, quote=True)}" '
+        'style="color:#0f6f95; text-decoration:none; font-weight:bold;">打开仪表盘</a>'
+        if dashboard_url
+        else ""
+    )
+    insight_warning = ""
+    if insight.warnings:
+        insight_warning = (
+            '<tr><td style="padding:10px 14px; color:#8a6d2f; font-size:12px; line-height:1.6; '
+            f'background:#fff8e6; border-top:1px solid #f5dfac;">{html.escape(insight.warnings[0])}</td></tr>'
+        )
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B 站观看日报速览 - {html.escape(metrics.date)}</title>
+</head>
+<body style="margin:0; padding:0; background:#f6f7f9; font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif; color:#24242a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; background:#f6f7f9; border-collapse:collapse;">
+    <tr>
+      <td align="center" style="padding:18px 10px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:640px; background:#ffffff; border-collapse:collapse; border:1px solid #e7e8ec;">
+          <tr>
+            <td style="padding:18px 18px 12px; background:#fb7299; color:#ffffff;">
+              <div style="font-size:18px; line-height:1.35; font-weight:bold;">B 站观看日报速览</div>
+              <div style="font-size:12px; line-height:1.6; margin-top:3px;">{html.escape(_format_chinese_date(metrics.date))} · 邮件内为轻量版，完整可视化报告见附件</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 18px 8px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse;">
+                <tr><td style="font-size:14px; font-weight:bold; color:#fb7299; padding-bottom:8px;">今日洞察</td></tr>
+                {_compact_text_row("总结", insight.summary)}
+                {_compact_text_row("鼓励", insight.encouragement)}
+                {_compact_text_row("提醒", insight.reminder)}
+                {_compact_text_row("明日小目标", insight.tomorrow_goal)}
+                {insight_warning}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; border:1px solid #ececf0;">
+                <tr>
+                  <td colspan="2" style="padding:10px 12px; font-size:14px; font-weight:bold; background:#f8f9fb;">核心指标</td>
+                </tr>
+                {_compact_metric_row("观看记录", f"{max(0, metrics.total_records)} 条", "唯一视频", f"{max(0, metrics.unique_videos)} 个")}
+                {_compact_metric_row("估算观看时长", _format_seconds(metrics.estimated_watch_seconds), "观看占比", _format_ratio(metrics))}
+                {_compact_metric_row("平均完成率", _format_percent(metrics.completion_rate_avg), "短视频/长视频", f"{max(0, metrics.short_video_count)} / {max(0, metrics.long_video_count)}")}
+                {_compact_metric_row("深度观看 80%+", f"{max(0, metrics.high_completion_video_count)} ({_format_percent(metrics.high_completion_video_ratio)})", "15s 内退出", f"{max(0, metrics.quick_exit_video_count)} ({_format_percent(metrics.quick_exit_video_ratio)})")}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 18px 16px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%; border-collapse:collapse; border:1px solid #ececf0;">
+                <tr>
+                  <td width="50%" style="padding:10px 12px; font-size:14px; font-weight:bold; background:#f8f9fb; border-right:1px solid #ececf0;">Top UP 主</td>
+                  <td width="50%" style="padding:10px 12px; font-size:14px; font-weight:bold; background:#f8f9fb;">Top 分区</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 12px; vertical-align:top; border-right:1px solid #ececf0;">{_compact_rank_table(metrics.top_authors)}</td>
+                  <td style="padding:6px 12px; vertical-align:top;">{_compact_rank_table(metrics.top_categories)}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:12px 18px 18px; color:#71717a; font-size:12px; line-height:1.6; background:#fafafa; border-top:1px solid #ececf0;">
+              完整可视化 HTML 报告已作为附件发送。{dashboard_link}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>"""
 
@@ -293,6 +381,50 @@ def _render_rank_list(rows: list[dict]) -> str:
         return "<p>暂无数据。</p>"
     items = "".join(f"<li>{html.escape(str(row['name']))}: {int(row['count'])}</li>" for row in rows)
     return f"<ol>{items}</ol>"
+
+
+def _compact_text_row(label: str, value: str) -> str:
+    return (
+        '<tr>'
+        f'<td style="padding:8px 0; border-top:1px solid #f0f0f3; font-size:13px; line-height:1.7;">'
+        f'<span style="font-weight:bold; color:#52525b;">{html.escape(label)}：</span>'
+        f'{html.escape(value)}</td>'
+        "</tr>"
+    )
+
+
+def _compact_metric_row(left_label: str, left_value: str, right_label: str, right_value: str) -> str:
+    cell_style = "padding:10px 12px; border-top:1px solid #ececf0; font-size:13px; line-height:1.5;"
+    return (
+        "<tr>"
+        f'<td width="50%" style="{cell_style} border-right:1px solid #ececf0;">'
+        f'<span style="color:#71717a;">{html.escape(left_label)}</span><br>'
+        f'<b style="font-size:16px; color:#24242a;">{html.escape(left_value)}</b></td>'
+        f'<td width="50%" style="{cell_style}">'
+        f'<span style="color:#71717a;">{html.escape(right_label)}</span><br>'
+        f'<b style="font-size:16px; color:#24242a;">{html.escape(right_value)}</b></td>'
+        "</tr>"
+    )
+
+
+def _compact_rank_table(rows: list[dict]) -> str:
+    if not rows:
+        return '<span style="color:#a1a1aa; font-size:13px;">暂无数据</span>'
+    rank_rows = []
+    for index, row in enumerate(rows[:3], start=1):
+        name = html.escape(str(row.get("name") or "Unknown"))
+        count = max(0, int(row.get("count") or 0))
+        rank_rows.append(
+            "<tr>"
+            f'<td width="24" style="padding:5px 0; color:#fb7299; font-size:12px; font-weight:bold;">{index}</td>'
+            f'<td style="padding:5px 6px 5px 0; color:#24242a; font-size:13px; line-height:1.4; word-break:break-word;">{name}</td>'
+            f'<td align="right" width="36" style="padding:5px 0; color:#71717a; font-size:13px; font-weight:bold;">{count}</td>'
+            "</tr>"
+        )
+    return (
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" '
+        f'style="width:100%; border-collapse:collapse;">{"".join(rank_rows)}</table>'
+    )
 
 
 def _format_seconds(seconds: int) -> str:

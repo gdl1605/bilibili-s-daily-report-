@@ -13,8 +13,9 @@ from .analyze import analyze_day
 from .client import BiliClient
 from .config import AppConfig
 from .emailer import EmailAttachment, SmtpConfig, send_daily_email
+from .insights import generate_daily_insight
 from .models import DailyMetrics, EnrichedHistoryItem
-from .report import build_email_html, render_dashboard
+from .report import build_compact_email_html, build_email_html, render_dashboard
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -105,8 +106,10 @@ def _send_email(args: argparse.Namespace) -> None:
     config = AppConfig.from_env(dotenv_path=args.dotenv, require_email=True)
     entries = _read_enriched(_enriched_path(output_dir, target_date))
     metrics = _metrics_for_date(output_dir, target_date) or analyze_day(entries, target_date=target_date)
-    html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url)
-    _send(config, metrics, html)
+    full_html = build_email_html(metrics, entries, dashboard_url=args.dashboard_url)
+    insight = generate_daily_insight(metrics, _load_metrics_with_current(output_dir, metrics), config=config)
+    body_html = build_compact_email_html(metrics, insight, dashboard_url=args.dashboard_url)
+    _send(config, metrics, body_html, attachment_html=full_html)
 
 
 def _run_daily(args: argparse.Namespace) -> None:
@@ -123,7 +126,9 @@ def _run_daily(args: argparse.Namespace) -> None:
     _report_path(output_dir, target_date).write_text(html, encoding="utf-8")
     if not args.skip_email:
         config = AppConfig.from_env(dotenv_path=args.dotenv, require_email=True)
-        _send(config, metrics, html)
+        insight = generate_daily_insight(metrics, _load_metrics_with_current(output_dir, metrics), config=config)
+        body_html = build_compact_email_html(metrics, insight, dashboard_url=dashboard_url)
+        _send(config, metrics, body_html, attachment_html=html)
 
 
 def _fetch_and_enrich(
@@ -180,7 +185,7 @@ def _render_site(
     )
 
 
-def _send(config: AppConfig, metrics: DailyMetrics, html: str) -> None:
+def _send(config: AppConfig, metrics: DailyMetrics, html_body: str, *, attachment_html: str) -> None:
     smtp_config = SmtpConfig(
         host=config.smtp_host or "",
         port=config.smtp_port,
@@ -193,11 +198,11 @@ def _send(config: AppConfig, metrics: DailyMetrics, html: str) -> None:
     send_daily_email(
         config=smtp_config,
         subject=f"B 站观看日报 - {metrics.date}",
-        html_body=html,
+        html_body=html_body,
         attachments=[
             EmailAttachment(
                 filename=f"bilibili-report-{metrics.date}.html",
-                content=html.encode("utf-8"),
+                content=attachment_html.encode("utf-8"),
                 maintype="text",
                 subtype="html",
             )
@@ -265,6 +270,13 @@ def _load_metrics(output_dir: Path) -> list[DailyMetrics]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             rows.append(DailyMetrics.from_dict(json.loads(line)))
+    return rows
+
+
+def _load_metrics_with_current(output_dir: Path, metrics: DailyMetrics) -> list[DailyMetrics]:
+    rows = [row for row in _load_metrics(output_dir) if row.date != metrics.date]
+    rows.append(metrics)
+    rows.sort(key=lambda row: row.date)
     return rows
 
 
