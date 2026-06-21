@@ -17,7 +17,7 @@ Local MVP is implemented in `bilibili-watch-report/` and is being refined throug
 - Email sending uses a separate compact table-based HTML body for mobile/QQ Mail compatibility, while attaching the full visual HTML report.
 - Daily aggregate metrics now retain full per-category aggregate breakdown (`category_breakdown`: name, count, estimated watch seconds, total duration seconds) without titles/details, and reports can compare the current day against yesterday and the prior available 7 daily metric rows. The compact email, full HTML report, dashboard data/table, and AI/rule insight path consume this aggregate-only comparison data.
 - Daily email insight text is generated locally by rules by default. Optional OpenAI-compatible AI insight generation is opt-in through `AI_ENABLED=true`, `AI_API_KEY`, and `AI_MODEL`, and failures fall back to rules without blocking email sending.
-- The active GitHub Actions workflow for the current repository layout is the repository-root `.github/workflows/daily.yml`, with commands running inside `bilibili-watch-report/`. Scheduled runs execute at `00:13 UTC` / `08:13 Asia/Shanghai`, send the previous day's email automatically, and manual runs default to `send_email=false` for safe testing.
+- The active GitHub Actions workflow for the current repository layout is the repository-root `.github/workflows/daily.yml`, with commands running inside `bilibili-watch-report/`. Scheduled runs execute at `17:32 UTC` / `01:32 Asia/Shanghai`, send the previous day's email automatically, and manual runs default to `send_email=false` for safe testing. Generated `data/` and `site/` outputs are ignored and not committed by the workflow.
 
 ## Standing Contracts
 

@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 import bili_report.insights as insights
 import pytest
 
+from bili_report import models
 from bili_report.comparison import build_daily_comparison
 from bili_report.config import AppConfig
 from bili_report.insights import build_ai_payload, generate_daily_insight
@@ -57,6 +58,72 @@ def make_config(**overrides: object) -> AppConfig:
     }
     values.update(overrides)
     return AppConfig(**values)
+
+
+def test_viewing_memory_from_dict_to_dict_sanitizes_and_bounds_fields() -> None:
+    memory_cls = getattr(models, "ViewingMemory", None)
+    assert memory_cls is not None
+
+    memory = memory_cls.from_dict(
+        {
+            "version": "2",
+            "updated_at": " 2026-06-17T08:13:00+08:00 ",
+            "stable_preferences": [
+                "  Tech 分区  ",
+                "",
+                "x" * 200,
+                "bot@example.com",
+                "  Music  ",
+                "Game",
+                "Documentary",
+                "Anime",
+            ],
+            "rhythm_notes": ["  晚上更容易连看  ", None, "mail-secret"],
+            "reflection_notes": ("  完成率高时体验更好  ", "cookie-secret"),
+            "unknown_field": "ignored",
+        }
+    )
+
+    serialized = memory.to_dict()
+
+    assert serialized["version"] == 2
+    assert serialized["updated_at"] == "2026-06-17T08:13:00+08:00"
+    assert len(serialized["stable_preferences"]) <= memory_cls.MAX_ITEMS_PER_FIELD
+    assert all(0 < len(value) <= memory_cls.MAX_TEXT_LENGTH for value in serialized["stable_preferences"])
+    assert serialized["stable_preferences"][0] == "Tech 分区"
+    assert "bot@example.com" not in json.dumps(serialized, ensure_ascii=False)
+    assert "mail-secret" not in json.dumps(serialized, ensure_ascii=False)
+    assert "cookie-secret" not in json.dumps(serialized, ensure_ascii=False)
+    assert "unknown_field" not in serialized
+
+
+def test_ai_payload_includes_sanitized_viewer_memory_only_when_provided() -> None:
+    memory_cls = getattr(models, "ViewingMemory", None)
+    assert memory_cls is not None
+
+    current = make_metrics(17)
+    history = [make_metrics(day) for day in range(1, 18)]
+    memory = memory_cls.from_dict(
+        {
+            "stable_preferences": ["  Tech 分区  ", "bot@example.com"],
+            "rhythm_notes": ["短视频多时容易快速划走"],
+            "reflection_notes": ["完成率高时更像主动选择"],
+            "title": "cookie-secret",
+            "raw": {"smtp": "mail-secret"},
+        }
+    )
+
+    payload = build_ai_payload(current, history, viewing_memory=memory)
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert payload["viewer_memory"] == memory.to_dict()
+    assert payload["viewer_memory"]["stable_preferences"] == ["Tech 分区"]
+    assert "viewer_memory" not in build_ai_payload(current, history)
+    assert "title" not in serialized.lower()
+    assert "raw" not in serialized.lower()
+    assert "cookie-secret" not in serialized
+    assert "mail-secret" not in serialized
+    assert "bot@example.com" not in serialized
 
 
 def test_ai_disabled_uses_rule_based_insight_without_http_call() -> None:
@@ -122,9 +189,15 @@ def test_ai_success_uses_openai_compatible_payload_and_timeout() -> None:
     assert captured["url"] == "https://api.example.com/v1/chat/completions"
     assert captured["timeout"] == 7.5
     assert captured["payload"]["model"] == "gpt-test"
+    system_content = captured["payload"]["messages"][0]["content"]
+    assert "聚合指标" in system_content
+    assert "viewer_memory" in system_content
+    assert "如果提供" in system_content
+    assert "敏感" in system_content
     user_content = captured["payload"]["messages"][1]["content"]
     assert "last_7_days" in user_content
     assert "last_30_days" in user_content
+    assert "viewer_memory" not in user_content
 
 
 def test_ai_default_transport_uses_certifi_ssl_context(monkeypatch) -> None:

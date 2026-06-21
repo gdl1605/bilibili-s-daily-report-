@@ -1,7 +1,49 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, ClassVar
+
+
+_SENSITIVE_TEXT_MARKERS = (
+    "@",
+    "cookie",
+    "sessdata",
+    "bili_jct",
+    "csrf",
+    "smtp",
+    "password",
+    "secret",
+    "token",
+    "authorization",
+    "bearer ",
+)
+
+
+@dataclass(slots=True)
+class ViewingMemory:
+    version: int = 1
+    updated_at: str = ""
+    stable_preferences: list[str] = field(default_factory=list)
+    rhythm_notes: list[str] = field(default_factory=list)
+    reflection_notes: list[str] = field(default_factory=list)
+
+    MAX_ITEMS_PER_FIELD: ClassVar[int] = 5
+    MAX_TEXT_LENGTH: ClassVar[int] = 80
+    MAX_UPDATED_AT_LENGTH: ClassVar[int] = 64
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ViewingMemory":
+        source = data if isinstance(data, dict) else {}
+        return cls(
+            version=_positive_int(source.get("version"), default=1),
+            updated_at=_memory_text(source.get("updated_at"), max_length=cls.MAX_UPDATED_AT_LENGTH),
+            stable_preferences=_memory_text_list(source.get("stable_preferences"), max_length=cls.MAX_TEXT_LENGTH),
+            rhythm_notes=_memory_text_list(source.get("rhythm_notes"), max_length=cls.MAX_TEXT_LENGTH),
+            reflection_notes=_memory_text_list(source.get("reflection_notes"), max_length=cls.MAX_TEXT_LENGTH),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(slots=True)
@@ -182,6 +224,44 @@ class DailyComparison:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _memory_text(value: Any, *, max_length: int) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or _contains_sensitive_text(text):
+        return ""
+    return text[:max_length]
+
+
+def _memory_text_list(value: Any, *, max_length: int) -> list[str]:
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        candidates = [value]
+    else:
+        candidates = list(value)
+
+    result = []
+    for item in candidates:
+        text = _memory_text(item, max_length=max_length)
+        if text:
+            result.append(text)
+        if len(result) >= ViewingMemory.MAX_ITEMS_PER_FIELD:
+            break
+    return result
+
+
+def _contains_sensitive_text(value: str) -> bool:
+    lowered = value.lower()
+    return any(marker in lowered for marker in _SENSITIVE_TEXT_MARKERS)
 
 
 def _optional_int(value: Any) -> int | None:

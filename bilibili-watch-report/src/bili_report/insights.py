@@ -10,7 +10,7 @@ import certifi
 
 from .comparison import build_daily_comparison
 from .config import AppConfig
-from .models import DailyComparison, DailyInsight, DailyMetrics
+from .models import DailyComparison, DailyInsight, DailyMetrics, ViewingMemory
 
 UrlOpen = Callable[..., Any]
 
@@ -115,10 +115,11 @@ def build_ai_payload(
     metrics_history: list[DailyMetrics],
     *,
     comparison: DailyComparison | None = None,
+    viewing_memory: ViewingMemory | None = None,
 ) -> dict[str, Any]:
     history = _history_with_current(metrics, metrics_history)
     comparison = comparison or build_daily_comparison(metrics, metrics_history)
-    return {
+    payload = {
         "current_day": _metric_snapshot(metrics),
         "trends": {
             "last_7_days": _aggregate_metrics(history[-7:], metrics),
@@ -126,6 +127,9 @@ def build_ai_payload(
         },
         "comparison": comparison.to_dict(),
     }
+    if viewing_memory is not None:
+        payload["viewer_memory"] = viewing_memory.to_dict()
+    return payload
 
 
 def _request_ai_insight(
@@ -143,8 +147,10 @@ def _request_ai_insight(
             {
                 "role": "system",
                 "content": (
-                    "Return compact Chinese JSON only with string fields summary, encouragement, "
-                    "reminder, tomorrow_goal. Use only the aggregate metrics provided."
+                    "只返回紧凑中文 JSON，字段必须是字符串 summary、encouragement、reminder、tomorrow_goal。"
+                    "语气温暖、像真人提醒但保持克制。只能使用提供的聚合指标，以及如果提供的 "
+                    "viewer_memory；不要假装知道未提供的个人事实。禁止使用或要求视频标题、原始观看明细、"
+                    "Cookie、SMTP 凭据、邮箱、完整请求头等敏感或原始数据。"
                 ),
             },
             {

@@ -9,6 +9,8 @@ def test_daily_workflow_injects_optional_ai_env_without_logging_secrets() -> Non
     assert "AI_API_KEY: ${{ secrets.AI_API_KEY }}" in text
     assert "AI_BASE_URL: ${{ secrets.AI_BASE_URL || vars.AI_BASE_URL || 'https://api.openai.com/v1' }}" in text
     assert "AI_MODEL: ${{ secrets.AI_MODEL || vars.AI_MODEL }}" in text
-    assert "AI_TIMEOUT_SECONDS: ${{ secrets.AI_TIMEOUT_SECONDS || vars.AI_TIMEOUT_SECONDS || '20' }}" in text
+    assert "AI_TIMEOUT_SECONDS: ${{ secrets.AI_TIMEOUT_SECONDS || vars.AI_TIMEOUT_SECONDS || '60' }}" in text
+    assert 'cron: "32 17 * * *"' in text
+    assert "git add data site" not in text
     assert "echo $AI_API_KEY" not in text
     assert "echo ${AI_API_KEY}" not in text

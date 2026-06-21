@@ -24,7 +24,8 @@ on:
           - "false"
           - "true"
   schedule:
-    - cron: "13 0 * * *"
+    # 01:32 Asia/Shanghai = 17:32 UTC on the previous calendar day.
+    - cron: "32 17 * * *"
 
 permissions:
   contents: write
@@ -57,7 +58,7 @@ jobs:
       AI_API_KEY: ${{ secrets.AI_API_KEY }}
       AI_BASE_URL: ${{ secrets.AI_BASE_URL || vars.AI_BASE_URL || 'https://api.openai.com/v1' }}
       AI_MODEL: ${{ secrets.AI_MODEL || vars.AI_MODEL }}
-      AI_TIMEOUT_SECONDS: ${{ secrets.AI_TIMEOUT_SECONDS || vars.AI_TIMEOUT_SECONDS || '20' }}
+      AI_TIMEOUT_SECONDS: ${{ secrets.AI_TIMEOUT_SECONDS || vars.AI_TIMEOUT_SECONDS || '60' }}
       PUBLISH_PAGES: ${{ github.event.inputs.publish_pages || vars.PUBLISH_PAGES || 'false' }}
       SEND_EMAIL: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.send_email || 'false' }}
       TARGET_DATE: ${{ github.event.inputs.target_date }}
@@ -88,18 +89,6 @@ jobs:
             python -m bili_report.cli run-daily --date "$TARGET_DATE" $EMAIL_FLAG
           else
             python -m bili_report.cli run-daily $EMAIL_FLAG
-          fi
-
-      - name: Commit generated data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data site
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit."
-          else
-            git commit -m "chore: update daily bilibili report"
-            git push
           fi
 
       - name: Upload dashboard artifact

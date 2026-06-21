@@ -76,7 +76,7 @@ Email behavior:
 
 ## GitHub Actions
 
-When this app lives under the repository root `bilibili-watch-report/`, the active workflow should be at the repository-level path `.github/workflows/daily.yml`. It runs at 00:13 UTC, which is 08:13 in Asia/Shanghai, and reports the previous day by default. The schedule intentionally avoids the top of the hour because GitHub Actions scheduled runs can be delayed or dropped during hourly load spikes. It also supports manual `workflow_dispatch`.
+When this app lives under the repository root `bilibili-watch-report/`, the active workflow should be at the repository-level path `.github/workflows/daily.yml`. It runs at 17:32 UTC, which is 01:32 in Asia/Shanghai on the next calendar day, and reports the previous day by default. The schedule intentionally avoids the top of the hour because GitHub Actions scheduled runs can be delayed or dropped during hourly load spikes. It also supports manual `workflow_dispatch`.
 
 Manual runs default to `send_email=false` for safer testing. Scheduled runs send the daily email automatically.
 
@@ -93,7 +93,7 @@ Add these repository secrets:
 - `MAIL_FROM`
 - Optional AI secrets: `AI_ENABLED`, `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT_SECONDS`
 
-The workflow commits `data/` and `site/` back to the repository. Use a private repository unless you intentionally want these aggregates stored publicly.
+Generated `data/` and `site/` files are ignored locally and are not committed by the workflow. Use the uploaded dashboard artifact or email attachment for the generated report outputs.
 
 ## GitHub Pages
 
@@ -106,7 +106,7 @@ Recommended setup:
 3. Add a repository variable `PUBLISH_PAGES` with value `true`.
 4. Configure Pages to deploy from GitHub Actions.
 
-If private Pages is unavailable or you leave `PUBLISH_PAGES=false`, the email still sends and the dashboard remains available as a workflow artifact and committed `site/` output.
+If private Pages is unavailable or you leave `PUBLISH_PAGES=false`, the email still sends and the dashboard remains available as a workflow artifact.
 
 ## Privacy And Stability Notes
 
