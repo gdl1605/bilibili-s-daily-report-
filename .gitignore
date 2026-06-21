@@ -5,3 +5,17 @@
 __pycache__/
 *.pyc
 *.log
+
+# Local AI agent/team workflow scaffolding.
+AGENTS.md
+CLAUDE.md
+codex-teammode-workflow/
+docs/README.md
+docs/architecture/
+docs/evidence/
+docs/handoff/
+docs/planner/
+docs/plans/
+docs/product/active-directions.md
+docs/workflow/
+workflow/
